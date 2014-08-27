@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # coding: utf-8
 
-require "right_aws"
+require "aws-sdk"
 require "highline/import"
 require "date"
 require_relative "./aes.rb"
@@ -12,14 +12,16 @@ password = ask("password: "){|q| q.echo = '*'}
 aes = AES.new(c_data, password, true) # base64mode
 aws_key, aws_secret = aes.decrypt_data.split(',')
 
-ec2 = RightAws::Ec2.new(aws_key, aws_secret, :endpoint_url => 'https://ec2.ap-southeast-1.amazonaws.com')
+ec2 = AWS::EC2.new(
+  :ec2_endpoint      => 'ec2.ap-southeast-1.amazonaws.com',
+  :access_key_id     => aws_key,
+  :secret_access_key => aws_secret
+)
 
 def get_status(ec2)
-  instances = []
-  ec2.describe_instances.each do |i|
-    instances << [ i[:aws_instance_id], i[:aws_state], i[:ip_address] ]
+  ec2.instances.map do |i|
+    [ i.id, i.status, i.ip_address ]
   end
-  instances
 end
 
 loop do
@@ -27,14 +29,15 @@ loop do
   state = get_status(ec2)
   puts "[#{Time.now.strftime("%Y/%m/%d %H:%M:%S")}] #{state.join(' : ')}"
   STDERR.puts "## s[C]can | [S]top | sta[R]t | [Q]uit ##"
-  #if %w(stopped running).include?(state[1])
+  id = state[0][0]
+  ins = ec2.instances[id]
   case STDIN.gets.rstrip.downcase
   when "s"
-    puts "#{state[0][0]} is stopping"
-    ec2.stop_instances(state[0][0])
+    puts "#{id} is stopping"
+    ins.stop
   when "r"
-    puts "#{state[0][0]} is starting"
-    ec2.start_instances(state[0][0])
+    puts "#{id} is starting"
+    ins.start
   when "q"
     exit
   else
